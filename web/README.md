@@ -19,7 +19,8 @@ Este repositório contém o frontend (Angular) e a estrutura reservada para o ba
 | Frontend | Angular 19 (Standalone + Signals) |
 | UI | Angular Material |
 | Estilo | SCSS + CSS Custom Properties |
-| Backend | A definir |
+| Backend | Python + FastAPI |
+| Agentes | LangChain / LangGraph + Anthropic SDK |
 
 ---
 
@@ -50,7 +51,14 @@ Organizer-IA/
 │   │   ├── styles.scss            # Tema global
 │   │   └── index.html
 │   └── angular.json
-├── api/          # Backend (em desenvolvimento)
+├── api/          # Backend FastAPI
+│   ├── app/
+│   │   ├── core/             # Configurações
+│   │   ├── features/
+│   │   │   └── chat/         # Router, schemas e service do chat
+│   │   └── shared/
+│   ├── railway.toml          # Configuração de deploy
+│   └── requirements.txt
 └── CLAUDE.md     # Contexto e convenções do projeto
 ```
 
@@ -62,24 +70,29 @@ Organizer-IA/
 
 - Node.js 18+
 - npm 9+
+- Python 3.12+
 
-### Instalação
+### Frontend
 
 ```bash
-# Clone o repositório
-git clone https://github.com/MarcosItSolution/Organizer-IA.git
-
-# Acesse a pasta do frontend
 cd Organizer-IA/web
-
-# Instale as dependências
 npm install
-
-# Inicie o servidor de desenvolvimento
 npx @angular/cli@19 serve
 ```
 
-A aplicação estará disponível em `http://localhost:4200`.
+Disponível em `http://localhost:4200`.
+
+### Backend
+
+```bash
+cd Organizer-IA/api
+python -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt
+cp .env.example .env
+uvicorn app.main:aplicacao --reload
+```
+
+Disponível em `http://localhost:8000` — docs automáticos em `http://localhost:8000/docs`.
 
 ---
 
@@ -94,17 +107,32 @@ A cada `push` ou Pull Request na `main`, o workflow `.github/workflows/ci.yml` e
 
 Se o build falhar, o PR fica bloqueado e o status aparece como ❌ diretamente no commit do GitHub.
 
-### Vercel (CD)
+### Vercel — Frontend (CD)
 
-A **Vercel** está integrada ao repositório GitHub e monitora a branch `main`. A cada push bem-sucedido, ela executa o build e publica a aplicação automaticamente, sem nenhuma etapa manual.
-
-O status do deploy (✅ ou ❌) é reportado diretamente no commit do GitHub, junto com o link da versão publicada.
+A **Vercel** monitora a branch `main` e publica o Angular automaticamente a cada push.
 
 | Parâmetro | Valor |
 |---|---|
 | Root Directory | `web` |
 | Build Command | `npm run build` |
 | Output Directory | `dist/organizer-ia/browser` |
+
+### Railway — Backend (CD)
+
+O **Railway** monitora a branch `main` e publica o FastAPI automaticamente a cada push, usando o `api/railway.toml` como configuração.
+
+| Parâmetro | Valor |
+|---|---|
+| Root Directory | `api` |
+| Start Command | `uvicorn app.main:aplicacao --host 0.0.0.0 --port $PORT` |
+
+**Variáveis de ambiente obrigatórias no Railway:**
+
+| Variável | Descrição |
+|---|---|
+| `ORIGENS_PERMITIDAS` | URL do frontend em produção (ex: `["https://organizer-ia.vercel.app"]`) |
+
+O status do deploy (✅ ou ❌) de ambas as plataformas é reportado diretamente no commit do GitHub.
 
 ---
 
