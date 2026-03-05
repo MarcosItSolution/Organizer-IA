@@ -1,0 +1,139 @@
+<div class="pagina-chat">
+
+  <header class="cabecalho">
+    <div class="cabecalho__marca">
+      <div class="cabecalho__icone">
+        <mat-icon>psychology</mat-icon>
+      </div>
+      <div class="cabecalho__textos">
+        <span class="cabecalho__titulo">Organizer <span class="cabecalho__destaque">IA</span></span>
+        <span class="cabecalho__subtitulo">Assistente inteligente</span>
+      </div>
+    </div>
+    <div class="cabecalho__status">
+      <span class="status-dot"></span>
+      <span class="status-label">Online</span>
+    </div>
+  </header>
+
+  <div class="area-mensagens">
+    @if (mensagens().length === 0) {
+      <div class="estado-vazio">
+        <div class="estado-vazio__orbe">
+          <mat-icon>auto_awesome</mat-icon>
+        </div>
+        <h2 class="estado-vazio__titulo">Qual tarefa iremos realizar?</h2>
+        <p class="estado-vazio__descricao">Envie uma tarefa ou anexe um arquivo para começarmos.</p>
+        <div class="estado-vazio__sugestoes">
+          <div class="sugestao">
+            <mat-icon>description</mat-icon>
+            <span>Analise um documento</span>
+          </div>
+          <div class="sugestao">
+            <mat-icon>storage</mat-icon>
+            <span>Processe dados SQL</span>
+          </div>
+          <div class="sugestao">
+            <mat-icon>lightbulb</mat-icon>
+            <span>Explore uma ideia</span>
+          </div>
+        </div>
+      </div>
+    }
+
+    @for (mensagem of mensagens(); track mensagem.id) {
+      <div class="mensagem" [class.mensagem--usuario]="mensagem.papel === 'usuario'" [class.mensagem--assistente]="mensagem.papel === 'assistente'">
+
+        @if (mensagem.papel === 'assistente') {
+          <div class="avatar avatar--assistente">
+            <mat-icon>psychology</mat-icon>
+          </div>
+        }
+
+        <div class="mensagem__conteudo">
+          <div class="mensagem__balao">
+            @if (mensagem.conteudo) {
+              <p class="mensagem__texto">{{ mensagem.conteudo }}</p>
+            }
+            @if (mensagem.anexos.length > 0) {
+              <div class="mensagem__anexos">
+                @for (anexo of mensagem.anexos; track anexo.nome) {
+                  <div class="chip-anexo">
+                    <mat-icon class="chip-anexo__icone">attach_file</mat-icon>
+                    <span class="chip-anexo__nome">{{ anexo.nome }}</span>
+                    <span class="chip-anexo__tamanho">{{ formatarTamanho(anexo.tamanho) }}</span>
+                  </div>
+                }
+              </div>
+            }
+          </div>
+          <span class="mensagem__hora">{{ mensagem.criadoEm | date:'HH:mm' }}</span>
+        </div>
+
+        @if (mensagem.papel === 'usuario') {
+          <div class="avatar avatar--usuario">
+            <mat-icon>person</mat-icon>
+          </div>
+        }
+
+      </div>
+    }
+  </div>
+
+  <div class="area-input">
+    @if (anexosPendentes().length > 0) {
+      <div class="anexos-pendentes">
+        @for (anexo of anexosPendentes(); track anexo.nome; let i = $index) {
+          <div class="chip-anexo chip-anexo--pendente">
+            <mat-icon class="chip-anexo__icone">insert_drive_file</mat-icon>
+            <span class="chip-anexo__nome">{{ anexo.nome }}</span>
+            <button mat-icon-button class="chip-anexo__remover" (click)="removerAnexo(i)" matTooltip="Remover">
+              <mat-icon>close</mat-icon>
+            </button>
+          </div>
+        }
+      </div>
+    }
+
+    <div class="input-container">
+      <input
+        #inputArquivo
+        type="file"
+        [accept]="formatosAceitos"
+        multiple
+        hidden
+        (change)="aoSelecionarArquivo($event)"
+      />
+
+      <button mat-icon-button class="btn-anexar" (click)="abrirSeletorArquivo()" matTooltip="Anexar arquivo">
+        <mat-icon>add_circle_outline</mat-icon>
+      </button>
+
+      <mat-form-field appearance="outline" subscriptSizing="dynamic" class="campo-input">
+        <textarea
+          matInput
+          [ngModel]="textoInput()"
+          (ngModelChange)="textoInput.set($event)"
+          placeholder="Digite sua demanda..."
+          cdkTextareaAutosize
+          cdkAutosizeMinRows="1"
+          cdkAutosizeMaxRows="6"
+          (keydown)="aoPressionarTecla($event)"
+        ></textarea>
+      </mat-form-field>
+
+      <button
+        class="btn-enviar"
+        [class.btn-enviar--ativo]="textoInput().trim() || anexosPendentes().length > 0"
+        (click)="aoEnviar()"
+        [disabled]="!textoInput().trim() && anexosPendentes().length === 0"
+        matTooltip="Enviar (Enter)"
+      >
+        <mat-icon>arrow_upward</mat-icon>
+      </button>
+    </div>
+
+    <p class="input-rodape">Enter para enviar · Shift+Enter para nova linha</p>
+  </div>
+
+</div>

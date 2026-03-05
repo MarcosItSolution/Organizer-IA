@@ -1,0 +1,21 @@
+# Claude Code (memória local - não vai para o repo)
+.claude/
+
+# Dependências
+web/node_modules/
+api/node_modules/
+
+# Build
+web/dist/
+api/dist/
+
+# Cache Angular
+web/.angular/
+
+# Ambiente
+.env
+.env.*
+
+# OS
+.DS_Store
+Thumbs.db
