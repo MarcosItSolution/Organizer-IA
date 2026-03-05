@@ -83,6 +83,31 @@ A aplicação estará disponível em `http://localhost:4200`.
 
 ---
 
+## CI/CD
+
+### GitHub Actions (CI)
+
+A cada `push` ou Pull Request na `main`, o workflow `.github/workflows/ci.yml` executa automaticamente:
+
+1. Instala as dependências via `npm ci`
+2. Executa o build de produção via `npm run build`
+
+Se o build falhar, o PR fica bloqueado e o status aparece como ❌ diretamente no commit do GitHub.
+
+### Vercel (CD)
+
+A **Vercel** está integrada ao repositório GitHub e monitora a branch `main`. A cada push bem-sucedido, ela executa o build e publica a aplicação automaticamente, sem nenhuma etapa manual.
+
+O status do deploy (✅ ou ❌) é reportado diretamente no commit do GitHub, junto com o link da versão publicada.
+
+| Parâmetro | Valor |
+|---|---|
+| Root Directory | `web` |
+| Build Command | `npm run build` |
+| Output Directory | `dist/organizer-ia/browser` |
+
+---
+
 ## Convenções do projeto
 
 - **Código em português** — variáveis, métodos, interfaces e nomes de arquivos
