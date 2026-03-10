@@ -7,35 +7,43 @@
       </div>
       <div class="cabecalho__textos">
         <span class="cabecalho__titulo">Organizer <span class="cabecalho__destaque">IA</span></span>
-        <span class="cabecalho__subtitulo">Assistente inteligente</span>
+        <span class="cabecalho__subtitulo">Arquiteto de Prompts</span>
       </div>
     </div>
-    <div class="cabecalho__status">
-      <span class="status-dot"></span>
-      <span class="status-label">Online</span>
+    <div class="cabecalho__acoes">
+      @if (conversaFinalizada()) {
+        <button mat-stroked-button class="btn-nova-conversa" (click)="novaConversa()" matTooltip="Iniciar nova conversa">
+          <mat-icon>add</mat-icon>
+          Nova conversa
+        </button>
+      }
+      <div class="cabecalho__status">
+        <span class="status-dot" [class.status-dot--carregando]="carregando()"></span>
+        <span class="status-label">{{ carregando() ? 'Processando...' : 'Online' }}</span>
+      </div>
     </div>
   </header>
 
-  <div class="area-mensagens">
+  <div class="area-mensagens" #areaMensagens>
     @if (mensagens().length === 0) {
       <div class="estado-vazio">
         <div class="estado-vazio__orbe">
           <mat-icon>auto_awesome</mat-icon>
         </div>
-        <h2 class="estado-vazio__titulo">Qual tarefa iremos realizar?</h2>
-        <p class="estado-vazio__descricao">Envie uma tarefa ou anexe um arquivo para começarmos.</p>
+        <h2 class="estado-vazio__titulo">Qual sistema vamos construir?</h2>
+        <p class="estado-vazio__descricao">Descreva sua demanda e eu vou gerar um prompt de engenharia completo para você.</p>
         <div class="estado-vazio__sugestoes">
           <div class="sugestao">
-            <mat-icon>description</mat-icon>
-            <span>Analise um documento</span>
+            <mat-icon>api</mat-icon>
+            <span>API REST com autenticação</span>
           </div>
           <div class="sugestao">
             <mat-icon>storage</mat-icon>
-            <span>Processe dados SQL</span>
+            <span>Pipeline de processamento de dados</span>
           </div>
           <div class="sugestao">
-            <mat-icon>lightbulb</mat-icon>
-            <span>Explore uma ideia</span>
+            <mat-icon>web</mat-icon>
+            <span>Aplicação web com painel</span>
           </div>
         </div>
       </div>
@@ -51,9 +59,26 @@
         }
 
         <div class="mensagem__conteudo">
-          <div class="mensagem__balao">
+          <div class="mensagem__balao" [class.mensagem__balao--com-markdown]="mensagem.markdownFinal">
             @if (mensagem.conteudo) {
               <p class="mensagem__texto">{{ mensagem.conteudo }}</p>
+            }
+            @if (mensagem.markdownFinal) {
+              <div class="mensagem__markdown-acoes">
+                <div class="markdown-preview">
+                  <mat-icon class="markdown-preview__icone">description</mat-icon>
+                  <span class="markdown-preview__nome">prompt-engenharia.md</span>
+                </div>
+                <button
+                  mat-flat-button
+                  class="btn-baixar"
+                  (click)="baixarMarkdown(mensagem.markdownFinal!)"
+                  matTooltip="Baixar prompt como Markdown"
+                >
+                  <mat-icon>download</mat-icon>
+                  Baixar .md
+                </button>
+              </div>
             }
             @if (mensagem.anexos.length > 0) {
               <div class="mensagem__anexos">
@@ -78,6 +103,21 @@
 
       </div>
     }
+
+    @if (carregando()) {
+      <div class="mensagem mensagem--assistente">
+        <div class="avatar avatar--assistente">
+          <mat-icon>psychology</mat-icon>
+        </div>
+        <div class="mensagem__conteudo">
+          <div class="mensagem__balao mensagem__balao--carregando">
+            <span class="typing-dot"></span>
+            <span class="typing-dot"></span>
+            <span class="typing-dot"></span>
+          </div>
+        </div>
+      </div>
+    }
   </div>
 
   <div class="area-input">
@@ -95,45 +135,53 @@
       </div>
     }
 
-    <div class="input-container">
-      <input
-        #inputArquivo
-        type="file"
-        [accept]="formatosAceitos"
-        multiple
-        hidden
-        (change)="aoSelecionarArquivo($event)"
-      />
+    @if (conversaFinalizada()) {
+      <div class="conversa-finalizada">
+        <mat-icon>check_circle</mat-icon>
+        <span>Prompt gerado! Clique em <strong>Nova conversa</strong> para começar novamente.</span>
+      </div>
+    } @else {
+      <div class="input-container">
+        <input
+          #inputArquivo
+          type="file"
+          [accept]="formatosAceitos"
+          multiple
+          hidden
+          (change)="aoSelecionarArquivo($event)"
+        />
 
-      <button mat-icon-button class="btn-anexar" (click)="abrirSeletorArquivo()" matTooltip="Anexar arquivo">
-        <mat-icon>add_circle_outline</mat-icon>
-      </button>
+        <button mat-icon-button class="btn-anexar" (click)="abrirSeletorArquivo()" matTooltip="Anexar arquivo" [disabled]="carregando()">
+          <mat-icon>add_circle_outline</mat-icon>
+        </button>
 
-      <mat-form-field appearance="outline" subscriptSizing="dynamic" class="campo-input">
-        <textarea
-          matInput
-          [ngModel]="textoInput()"
-          (ngModelChange)="textoInput.set($event)"
-          placeholder="Digite sua demanda..."
-          cdkTextareaAutosize
-          cdkAutosizeMinRows="1"
-          cdkAutosizeMaxRows="6"
-          (keydown)="aoPressionarTecla($event)"
-        ></textarea>
-      </mat-form-field>
+        <mat-form-field appearance="outline" subscriptSizing="dynamic" class="campo-input">
+          <textarea
+            matInput
+            [ngModel]="textoInput()"
+            (ngModelChange)="textoInput.set($event)"
+            placeholder="Descreva o sistema que deseja desenvolver..."
+            cdkTextareaAutosize
+            cdkAutosizeMinRows="1"
+            cdkAutosizeMaxRows="6"
+            (keydown)="aoPressionarTecla($event)"
+            [disabled]="carregando()"
+          ></textarea>
+        </mat-form-field>
 
-      <button
-        class="btn-enviar"
-        [class.btn-enviar--ativo]="textoInput().trim() || anexosPendentes().length > 0"
-        (click)="aoEnviar()"
-        [disabled]="!textoInput().trim() && anexosPendentes().length === 0"
-        matTooltip="Enviar (Enter)"
-      >
-        <mat-icon>arrow_upward</mat-icon>
-      </button>
-    </div>
+        <button
+          class="btn-enviar"
+          [class.btn-enviar--ativo]="textoInput().trim() || anexosPendentes().length > 0"
+          (click)="aoEnviar()"
+          [disabled]="(!textoInput().trim() && anexosPendentes().length === 0) || carregando()"
+          matTooltip="Enviar (Enter)"
+        >
+          <mat-icon>arrow_upward</mat-icon>
+        </button>
+      </div>
 
-    <p class="input-rodape">Enter para enviar · Shift+Enter para nova linha</p>
+      <p class="input-rodape">Enter para enviar · Shift+Enter para nova linha</p>
+    }
   </div>
 
 </div>

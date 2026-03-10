@@ -1,4 +1,4 @@
-import { Component, ElementRef, signal, ViewChild } from '@angular/core';
+import { Component, ElementRef, OnDestroy, ViewChild, inject, signal, afterNextRender, Injector } from '@angular/core';
 import { DatePipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { MatButtonModule } from '@angular/material/button';
@@ -7,7 +7,10 @@ import { MatInputModule } from '@angular/material/input';
 import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatTooltipModule } from '@angular/material/tooltip';
 import { TextFieldModule } from '@angular/cdk/text-field';
-import { Anexo, Mensagem, TipoAnexo } from '../../core/models/mensagem.model';
+import { Subscription } from 'rxjs';
+
+import { Anexo, MensagemHistorico, Mensagem, TipoAnexo } from '../../core/models/mensagem.model';
+import { AgentePromptService } from '../../core/services/agente-prompt.service';
 
 const EXTENSOES_ACEITAS: TipoAnexo[] = [
   'sql', 'doc', 'docx', 'csv', 'xls', 'xlsx', 'txt', 'png', 'jpg', 'jpeg',
@@ -28,12 +31,19 @@ const EXTENSOES_ACEITAS: TipoAnexo[] = [
   templateUrl: './chat.component.html',
   styleUrl: './chat.component.scss',
 })
-export class ChatComponent {
+export class ChatComponent implements OnDestroy {
   @ViewChild('inputArquivo') inputArquivo!: ElementRef<HTMLInputElement>;
+  @ViewChild('areaMensagens') areaMensagens!: ElementRef<HTMLDivElement>;
+
+  private readonly agentePromptService = inject(AgentePromptService);
+  private readonly injector = inject(Injector);
+  private subscricaoAtiva: Subscription | null = null;
 
   readonly mensagens = signal<Mensagem[]>([]);
   readonly anexosPendentes = signal<Anexo[]>([]);
   readonly textoInput = signal<string>('');
+  readonly carregando = signal<boolean>(false);
+  readonly conversaFinalizada = signal<boolean>(false);
 
   readonly formatosAceitos = EXTENSOES_ACEITAS.map(ext => `.${ext}`).join(',');
 
@@ -41,9 +51,14 @@ export class ChatComponent {
     const conteudo = this.textoInput().trim();
     const anexos = this.anexosPendentes();
 
-    if (!conteudo && anexos.length === 0) return;
+    if ((!conteudo && anexos.length === 0) || this.carregando() || this.conversaFinalizada()) return;
 
-    const mensagem: Mensagem = {
+    const historico: MensagemHistorico[] = this.mensagens().map(m => ({
+      papel: m.papel,
+      conteudo: m.conteudo,
+    }));
+
+    const mensagemUsuario: Mensagem = {
       id: crypto.randomUUID(),
       papel: 'usuario',
       conteudo,
@@ -51,9 +66,36 @@ export class ChatComponent {
       criadoEm: new Date(),
     };
 
-    this.mensagens.update(anterior => [...anterior, mensagem]);
+    this.mensagens.update(anterior => [...anterior, mensagemUsuario]);
     this.textoInput.set('');
     this.anexosPendentes.set([]);
+    this.carregando.set(true);
+    this.rolarParaFinal();
+
+    this.subscricaoAtiva = this.agentePromptService
+      .enviarMensagem({ mensagem: conteudo, historico })
+      .subscribe({
+        next: resposta => {
+          const mensagemAssistente: Mensagem = {
+            id: crypto.randomUUID(),
+            papel: 'assistente',
+            conteudo: resposta.resposta,
+            anexos: [],
+            criadoEm: new Date(),
+            markdownFinal: resposta.markdown_final ?? undefined,
+          };
+          this.mensagens.update(anterior => [...anterior, mensagemAssistente]);
+          this.carregando.set(false);
+          this.rolarParaFinal();
+
+          if (resposta.fase === 'finalizado') {
+            this.conversaFinalizada.set(true);
+          }
+        },
+        error: () => {
+          this.carregando.set(false);
+        },
+      });
   }
 
   aoPressionarTecla(evento: KeyboardEvent): void {
@@ -86,10 +128,41 @@ export class ChatComponent {
     this.inputArquivo.nativeElement.click();
   }
 
+  private rolarParaFinal(): void {
+    afterNextRender(() => {
+      const el = this.areaMensagens?.nativeElement;
+      if (el) el.scrollTop = el.scrollHeight;
+    }, { injector: this.injector });
+  }
+
+  novaConversa(): void {
+    this.mensagens.set([]);
+    this.anexosPendentes.set([]);
+    this.textoInput.set('');
+    this.carregando.set(false);
+    this.conversaFinalizada.set(false);
+    this.subscricaoAtiva?.unsubscribe();
+    this.subscricaoAtiva = null;
+  }
+
+  baixarMarkdown(conteudo: string): void {
+    const blob = new Blob([conteudo], { type: 'text/markdown;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `prompt-engenharia-${Date.now()}.md`;
+    link.click();
+    URL.revokeObjectURL(url);
+  }
+
   formatarTamanho(bytes: number): string {
     if (bytes < 1024) return `${bytes} B`;
     if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
     return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  }
+
+  ngOnDestroy(): void {
+    this.subscricaoAtiva?.unsubscribe();
   }
 
   private extrairExtensao(nomeArquivo: string): TipoAnexo {
