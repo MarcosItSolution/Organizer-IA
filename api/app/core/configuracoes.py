@@ -1,3 +1,5 @@
+from typing import Optional
+
 from pydantic import SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -10,6 +12,9 @@ class Configuracoes(BaseSettings):
     porta: int = 8000
     origens_permitidas: list[str] = ["http://localhost:4200"]
     groq_api_key: SecretStr
+    github_token: Optional[SecretStr] = None
+    github_repo: str = ""
+    github_branch_base: str = "main"
 
 
 configuracoes = Configuracoes()

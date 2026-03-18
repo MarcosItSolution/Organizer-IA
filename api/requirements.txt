@@ -4,3 +4,4 @@ pydantic-settings>=2.6.0
 langchain>=0.3.0
 langchain-groq>=0.2.0
 langgraph>=0.2.0
+PyGithub>=2.0.0

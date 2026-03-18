@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends
 
-from app.features.engenheiro_prompt.esquemas import EntradaAgente, RespostaAgente
-from app.features.engenheiro_prompt.servico import ServicoAgenteArquitetoPrompts
+from app.agents.engenheiro_prompt.esquemas import EntradaAgente, RespostaAgente
+from app.agents.engenheiro_prompt.servico import ServicoAgenteArquitetoPrompts
 
 roteador_engenheiro_prompt = APIRouter()
 

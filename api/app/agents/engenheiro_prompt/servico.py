@@ -2,8 +2,8 @@ from typing import Optional
 
 from langchain_core.messages import AIMessage, HumanMessage
 
-from app.features.engenheiro_prompt.agente import EstadoAgente, agente_arquiteto_prompts
-from app.features.engenheiro_prompt.esquemas import EntradaAgente, RespostaAgente
+from app.agents.engenheiro_prompt.agente import EstadoAgente, agente_arquiteto_prompts
+from app.agents.engenheiro_prompt.esquemas import EntradaAgente, RespostaAgente
 
 
 class ServicoAgenteArquitetoPrompts:
