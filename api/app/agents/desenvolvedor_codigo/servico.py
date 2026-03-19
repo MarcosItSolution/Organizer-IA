@@ -14,10 +14,8 @@ class ServicoDesenvolvedorCodigo:
             "mensagens": [],
             "prompt_engenharia": entrada.prompt_engenharia,
             "arquivos_gerados": None,
-            "titulo_pr": None,
-            "descricao_pr": None,
-            "nome_branch": None,
-            "url_pull_request": None,
+            "titulo": None,
+            "descricao": None,
         }
 
         resultado = await agente_desenvolvedor_codigo.ainvoke(estado_inicial)
@@ -28,24 +26,27 @@ class ServicoDesenvolvedorCodigo:
         )
         mensagem_texto: str = ultima_mensagem.content if ultima_mensagem else ""  # type: ignore[assignment]
 
-        if resultado.get("url_pull_request"):
-            arquivos = [
-                ArquivoGerado(
-                    caminho=arquivo["caminho"],
-                    conteudo=arquivo["conteudo"],
-                    descricao=arquivo["descricao"],
-                )
-                for arquivo in (resultado.get("arquivos_gerados") or [])
-            ]
+        arquivos_gerados: list[dict] = resultado.get("arquivos_gerados") or []
+
+        if not arquivos_gerados:
             return RespostaDesenvolvedorCodigo(
-                url_pull_request=resultado["url_pull_request"],
-                arquivos_gerados=arquivos,
-                titulo_pr=resultado.get("titulo_pr") or "",
-                fase="finalizado",
-                mensagem=mensagem_texto,
+                fase="erro",
+                mensagem=mensagem_texto or "O agente não conseguiu gerar o código. Verifique o prompt de engenharia.",
             )
 
+        arquivos = [
+            ArquivoGerado(
+                caminho=arquivo["caminho"],
+                conteudo=arquivo["conteudo"],
+                descricao=arquivo["descricao"],
+            )
+            for arquivo in arquivos_gerados
+        ]
+
         return RespostaDesenvolvedorCodigo(
-            fase="erro",
-            mensagem=mensagem_texto or "O agente não conseguiu gerar o código. Verifique o prompt de engenharia.",
+            arquivos_gerados=arquivos,
+            titulo=resultado.get("titulo") or "",
+            descricao=resultado.get("descricao") or "",
+            fase="finalizado",
+            mensagem=mensagem_texto,
         )

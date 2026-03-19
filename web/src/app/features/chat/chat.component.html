@@ -110,11 +110,18 @@
           <mat-icon>psychology</mat-icon>
         </div>
         <div class="mensagem__conteudo">
-          <div class="mensagem__balao mensagem__balao--carregando">
-            <span class="typing-dot"></span>
-            <span class="typing-dot"></span>
-            <span class="typing-dot"></span>
-          </div>
+          @if (faseBubble() === 'implementando') {
+            <div class="mensagem__balao mensagem__balao--implementando">
+              <span class="implementando-spinner"></span>
+              <span class="implementando-texto">Implementando no projeto...</span>
+            </div>
+          } @else {
+            <div class="mensagem__balao mensagem__balao--carregando">
+              <span class="typing-dot"></span>
+              <span class="typing-dot"></span>
+              <span class="typing-dot"></span>
+            </div>
+          }
         </div>
       </div>
     }
@@ -138,7 +145,7 @@
     @if (conversaFinalizada()) {
       <div class="conversa-finalizada">
         <mat-icon>check_circle</mat-icon>
-        <span>Prompt gerado! Clique em <strong>Nova conversa</strong> para começar novamente.</span>
+        <span>Implementação concluída! Clique em <strong>Nova conversa</strong> para começar novamente.</span>
       </div>
     } @else {
       <div class="input-container">

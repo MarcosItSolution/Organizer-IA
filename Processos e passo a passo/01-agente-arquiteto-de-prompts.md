@@ -203,11 +203,9 @@ No contexto deste agente:
 
 ```python
 class DadosColetados(BaseModel):
-    objetivo: str = Field(description="Objetivo principal do sistema/funcionalidade")
-    tipo_sistema: str = Field(description="Tipo: API REST, web app, CLI, biblioteca, microsserviço, etc.")
-    tecnologias: list[str] = Field(description="Lista de tecnologias, linguagens e frameworks")
-    entradas_saidas: str = Field(description="Descrição das entradas e saídas esperadas do sistema")
-    restricoes: str = Field(default="", description="Restrições e requisitos não-funcionais")
+    objetivo: str = Field(description="Objetivo da funcionalidade a ser implementada no projeto")
+    entradas_saidas: str = Field(description="Descrição das entradas e saídas esperadas da funcionalidade")
+    restricoes: str = Field(default="", description="Restrições, validações e regras de negócio específicas")
     exemplos: str = Field(default="", description="Exemplos de uso ou casos concretos de input/output")
 
 @tool(args_schema=DadosColetados)
@@ -215,6 +213,8 @@ def solicitar_geracao_prompt(...) -> str:
     """Chame quando tiver coletado informações suficientes..."""
     return "DADOS_COLETADOS"
 ```
+
+Observe que `tipo_sistema` e `tecnologias` foram **removidos** em relação a uma versão anterior. Como o agente agora opera sempre dentro do contexto do projeto Organizer IA (stack já definida: Angular 19 + FastAPI + LangGraph), coletar essas informações do usuário seria redundante. O agente foca apenas no **o quê** será construído, não no **como** — que já está definido pelas convenções do projeto.
 
 O `args_schema` com Pydantic faz duas coisas críticas:
 1. **Gera o JSON Schema** que é enviado ao LLM na requisição, descrevendo os campos e seus tipos
@@ -254,20 +254,46 @@ O comportamento do agente é inteiramente guiado por dois system prompts.
 
 O system prompt do `no_agente`. Define:
 
-- **Persona**: "Você é o Arquiteto de Prompts, especialista em engenharia de requisitos"
-- **Lista de informações obrigatórias** (objetivo, tipo, tecnologias, I/O) e opcionais (restrições, exemplos)
-- **Regras de conduta**: uma pergunta por vez, confirmar ambiguidades, não repetir perguntas já respondidas
-- **Critério de acionamento**: "Assim que tiver os 4 itens obrigatórios, chame `solicitar_geracao_prompt`"
+- **Persona e contexto**: "Você é o Arquiteto de Prompts do projeto Organizer IA" — com o conteúdo completo do `CLAUDE.md` injetado diretamente no prompt
+- **Lista de informações a coletar**: apenas objetivo e entradas/saídas — tipo de sistema e tecnologias são omitidos pois já estão definidos pelo projeto
+- **Regras de conduta**: uma pergunta por vez, confirmar ambiguidades, não perguntar sobre stack/tecnologias
+- **Critério de acionamento**: "Assim que tiver o objetivo e as entradas/saídas claramente definidos, chame `solicitar_geracao_prompt`"
 
 A chave está em deixar o critério de transição **explícito e mensurável** no prompt. O LLM não adivinha quando parar — ele segue uma regra clara.
+
+O conteúdo do `CLAUDE.md` é lido em tempo de inicialização do módulo e interpolado diretamente na string do prompt via f-string:
+
+```python
+_RAIZ_PROJETO = Path(__file__).parent.parent.parent.parent.parent
+
+def _carregar_contexto_projeto() -> str:
+    claude_md = _RAIZ_PROJETO / "CLAUDE.md"
+    if claude_md.exists():
+        return claude_md.read_text(encoding="utf-8")
+    return ""
+
+_CONTEXTO_PROJETO = _carregar_contexto_projeto()
+
+PROMPT_COLETOR = f"""Você é o Arquiteto de Prompts do projeto Organizer IA...
+
+## Contexto do Projeto
+
+{_CONTEXTO_PROJETO}
+...
+"""
+```
+
+Isso significa que qualquer atualização no `CLAUDE.md` é refletida automaticamente no comportamento do agente no próximo restart da API — sem nenhuma mudança de código.
 
 ### 6.2 PROMPT_GERADOR
 
 O system prompt do `no_gerador_prompt`. Define:
 
-- **Persona**: especialista sênior em prompt engineering
+- **Persona e contexto do projeto**: inclui o mesmo `_CONTEXTO_PROJETO` do `CLAUDE.md`
 - **Princípios**: especificidade, completude, estrutura, imperativo
-- **Estrutura obrigatória** do prompt a ser gerado (9 seções: papel, contexto, tarefa, stack, requisitos funcionais, padrões de código, interface de dados, restrições, formato de entrega)
+- **Estrutura obrigatória** do prompt a ser gerado (7 seções: papel, contexto do projeto, tarefa, requisitos funcionais, interface de dados, estrutura de arquivos esperada, formato de entrega)
+
+Note que a seção "Stack Tecnológica" sumiu da estrutura de saída: ela já está no `_CONTEXTO_PROJETO` injetado no prompt, então não precisa ser repetida. A seção "Estrutura de Arquivos Esperada" foi adicionada — fundamental para que o Agente Desenvolvedor saiba exatamente onde criar cada arquivo.
 
 Usar dois LLMs com papéis distintos (um coletor/conversacional com `temperature=0.7`, outro gerador/técnico com `temperature=0.3`) é uma boa prática em IA aplicada:
 
@@ -337,10 +363,20 @@ class EntradaAgente(BaseModel):
 
 class RespostaAgente(BaseModel):
     resposta: str                          # Texto para exibir no chat
-    fase: Literal["coletando", "finalizado"]
+    fase: Literal["coletando", "finalizado", "implementado"]
     markdown_final: Optional[str] = None        # Presente quando o prompt foi gerado
     prompt_engenharia: Optional[str] = None     # O prompt bruto sem formatação markdown
+    arquivos_implementados: list[str] = []      # Caminhos dos arquivos escritos em disco
 ```
+
+O campo `fase` agora tem três estados:
+- `"coletando"` — agente ainda está fazendo perguntas ao usuário
+- `"finalizado"` — removido do fluxo normal; era um estado intermediário que não existe mais na resposta ao frontend
+- `"implementado"` — prompt gerado **e** código já escrito em disco pelo Agente Desenvolvedor
+
+A fase `"finalizado"` não é mais retornada ao frontend — ao gerar o prompt, o servico encadeia automaticamente o Agente Desenvolvedor e só retorna quando a implementação está completa.
+
+`arquivos_implementados` contém os caminhos relativos (a partir da raiz do projeto) dos arquivos criados em disco, ex: `["api/app/features/auth/roteador.py", "api/app/features/auth/esquemas.py"]`. O frontend pode exibir essa lista para o usuário saber o que foi gerado.
 
 Schemas separados de entrada e saída são uma boa prática porque:
 - Evitam expor campos internos que não deveriam sair na API
@@ -369,11 +405,40 @@ class ServicoAgenteArquitetoPrompts:
         # ... extrai e retorna RespostaAgente
 ```
 
-O serviço faz a **tradução entre o mundo HTTP e o mundo do agente**:
-- Converte `MensagemHistorico` (schema Pydantic) → `HumanMessage`/`AIMessage` (objetos LangChain)
-- Reconstrói o estado inicial do grafo a partir do request
-- Chama `ainvoke` (execução assíncrona completa do grafo)
-- Extrai a resposta relevante do estado final
+O serviço faz a **tradução entre o mundo HTTP e o mundo do agente** e orquestra o pipeline completo:
+
+```python
+class ServicoAgenteArquitetoPrompts:
+    async def processar_mensagem(self, entrada: EntradaAgente) -> RespostaAgente:
+        # 1. Executa o grafo do Engenheiro Prompt
+        resultado = await agente_arquiteto_prompts.ainvoke(estado_inicial)
+
+        # 2. Se ainda está coletando, retorna a pergunta ao usuário
+        if not markdown_final or not prompt_engenharia:
+            return RespostaAgente(resposta=resposta_texto, fase="coletando")
+
+        # 3. Prompt pronto → encadeia automaticamente o Agente Desenvolvedor
+        arquivos_implementados = await self._executar_desenvolvedor(prompt_engenharia)
+
+        # 4. Retorna resultado completo com lista de arquivos criados
+        return RespostaAgente(
+            resposta=f"Implementação concluída! {len(arquivos_implementados)} arquivo(s) criado(s).",
+            fase="implementado",
+            markdown_final=markdown_final,
+            prompt_engenharia=prompt_engenharia,
+            arquivos_implementados=arquivos_implementados,
+        )
+
+    async def _executar_desenvolvedor(self, prompt_engenharia: str) -> list[str]:
+        from app.agents.desenvolvedor_codigo.servico import ServicoDesenvolvedorCodigo
+        servico_dev = ServicoDesenvolvedorCodigo()
+        resposta = await servico_dev.processar_prompt(
+            EntradaDesenvolvedorCodigo(prompt_engenharia=prompt_engenharia)
+        )
+        return [arquivo.caminho for arquivo in resposta.arquivos_gerados]
+```
+
+O import dentro do método (`_executar_desenvolvedor`) é intencional: evita dependência circular no nível de módulo entre `engenheiro_prompt.servico` e `desenvolvedor_codigo.servico`.
 
 **Por que o agente é stateless por request?**
 
@@ -498,7 +563,7 @@ Frontend
   │  carregando.set(false)
 ```
 
-### Turno de geração (quando o agente tem dados suficientes)
+### Turno de geração e implementação (quando o agente tem dados suficientes)
 
 ```
 Frontend
@@ -506,9 +571,8 @@ Frontend
   │  {
   │    mensagem: "entrada é um JSON com campos nome e email",
   │    historico: [
-  │      { papel: "usuario", conteudo: "quero criar uma API" },
-  │      { papel: "assistente", conteudo: "Que tipo de API?" },
-  │      { papel: "usuario", conteudo: "REST com FastAPI" },
+  │      { papel: "usuario", conteudo: "quero criar uma feature de cadastro" },
+  │      { papel: "assistente", conteudo: "Qual o objetivo dessa feature?" },
   │      ... (turnos anteriores)
   │    ]
   │  }
@@ -517,7 +581,7 @@ servico.py → Reconstrói histórico completo como LangChain messages
   ▼
 no_agente
   │  LLM analisa TODO o histórico + mensagem atual
-  │  Avalia: tenho objetivo ✓, tipo ✓, tecnologias ✓, I/O ✓
+  │  Avalia: tenho objetivo ✓, entradas/saídas ✓ (stack já é conhecida do projeto)
   │  LLM responde com tool_call:
   │  AIMessage(
   │    content="",
@@ -525,9 +589,7 @@ no_agente
   │      id: "toolu_abc123",
   │      name: "solicitar_geracao_prompt",
   │      args: {
-  │        objetivo: "API REST para cadastro de usuários",
-  │        tipo_sistema: "API REST",
-  │        tecnologias: ["Python", "FastAPI", "PostgreSQL"],
+  │        objetivo: "Endpoint de cadastro de usuários com validação de email único",
   │        entradas_saidas: "Entrada: JSON {nome, email}. Saída: usuário criado com id.",
   │        restricoes: "",
   │        exemplos: ""
@@ -540,21 +602,35 @@ roteador_agente → tool_calls? SIM → "no_gerador_prompt"
 no_gerador_prompt
   │  Extrai args do tool_call
   │  Cria ToolMessage (obrigatório pelo protocolo LangChain/Anthropic)
-  │  Chama LLM gerador com PROMPT_GERADOR + dados em JSON
-  │  LLM gera: prompt técnico completo em markdown
+  │  Chama LLM gerador com PROMPT_GERADOR (que inclui _CONTEXTO_PROJETO) + dados em JSON
+  │  LLM gera: prompt técnico completo em markdown, já com estrutura de arquivos esperada
   │  _formatar_markdown(): monta documento final
-  │  Retorna: { mensagens: [ToolMessage, AIMessage("✅ gerado!")],
+  │  Retorna: { mensagens: [ToolMessage, AIMessage("Prompt gerado. Iniciando implementação...")],
   │             dados_coletados: {...}, prompt_engenharia: "...", markdown_final: "..." }
   ▼
 servico.py
-  │  fase = "finalizado" (markdown_final não é null)
+  │  markdown_final e prompt_engenharia presentes
+  │  → chama _executar_desenvolvedor(prompt_engenharia)
+  │      │
+  │      ▼
+  │   ServicoDesenvolvedorCodigo.processar_prompt(...)
+  │      │  (LangGraph do desenvolvedor executa — ver documento 02)
+  │      │  Arquivos escritos em disco na raiz do projeto
+  │      ▼
+  │   retorna lista de caminhos: ["api/app/features/auth/roteador.py", ...]
   ▼
-RespostaAgente { resposta: "✅...", fase: "finalizado", markdown_final: "# Prompt...", ... }
+RespostaAgente {
+  resposta: "Implementação concluída! 4 arquivo(s) criado(s) no projeto.",
+  fase: "implementado",
+  markdown_final: "# Prompt...",
+  prompt_engenharia: "...",
+  arquivos_implementados: ["api/app/features/auth/__init__.py", ...]
+}
   ▼
 Frontend
-  │  Adiciona mensagem com markdownFinal
+  │  Exibe lista de arquivos criados
   │  conversaFinalizada.set(true) → desabilita input, mostra botão "Nova conversa"
-  │  Exibe botão "Baixar .md" na mensagem do assistente
+  │  Exibe botão "Baixar .md" com o prompt de engenharia gerado
 ```
 
 ---
@@ -651,26 +727,26 @@ Gerenciar o ciclo de vida da subscription previne **memory leaks**. Se o compone
 
 ## 11. O que vem a seguir
 
-Este agente é o **primeiro** de um pipeline multi-agente planejado:
+O pipeline de dois agentes está implementado e integrado:
 
 ```
 Usuário → [Agente Arquiteto de Prompts]
-                    │
-                    │ prompt_engenharia
+                    │  (encadeamento automático no servico.py)
+                    │  prompt_engenharia
                     ▼
-         [Agente Desenvolvedor de Código]  ← próximo a implementar
+         [Agente Desenvolvedor de Código]  ← implementado (ver documento 02)
                     │
-                    │ código gerado
+                    │  arquivos escritos em disco
                     ▼
-         [Agente Revisor de Código]       ← futuro
+         [Agente Revisor de Código]        ← futuro
 ```
 
 ### Melhorias possíveis neste agente
 
-1. **Streaming SSE**: em vez de esperar o agente terminar, transmitir tokens em tempo real para o frontend (melhor UX)
+1. **Streaming SSE**: em vez de esperar os dois agentes terminarem (o que pode levar 30-60s), transmitir tokens em tempo real para o frontend com Server-Sent Events — mostrando o progresso da geração do prompt e depois da escrita dos arquivos
 2. **Persistência de sessão**: salvar histórico em banco de dados para retomar conversas
-3. **Memória entre conversas**: usar embeddings para recuperar contexto de projetos anteriores do usuário
-4. **Validação do prompt gerado**: um LLM separado como "crítico" que avalia a qualidade do prompt antes de retornar
+3. **Memória entre conversas**: usar embeddings para recuperar contexto de funcionalidades anteriores do projeto
+4. **Validação do prompt gerado**: um LLM separado como "crítico" que avalia a qualidade do prompt antes de disparar o Agente Desenvolvedor
 5. **Testes**: implementar testes unitários para cada nó do grafo com mocks do LLM
 
 ---

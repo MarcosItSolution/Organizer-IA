@@ -16,6 +16,8 @@ const EXTENSOES_ACEITAS: TipoAnexo[] = [
   'sql', 'doc', 'docx', 'csv', 'xls', 'xlsx', 'txt', 'png', 'jpg', 'jpeg',
 ];
 
+const DELAY_IMPLEMENTANDO_MS = 6000;
+
 @Component({
   selector: 'app-chat',
   imports: [
@@ -38,12 +40,14 @@ export class ChatComponent implements OnDestroy {
   private readonly agentePromptService = inject(AgentePromptService);
   private readonly injector = inject(Injector);
   private subscricaoAtiva: Subscription | null = null;
+  private timeoutImplementando: ReturnType<typeof setTimeout> | null = null;
 
   readonly mensagens = signal<Mensagem[]>([]);
   readonly anexosPendentes = signal<Anexo[]>([]);
   readonly textoInput = signal<string>('');
   readonly carregando = signal<boolean>(false);
   readonly conversaFinalizada = signal<boolean>(false);
+  readonly faseBubble = signal<'pensando' | 'implementando'>('pensando');
 
   readonly formatosAceitos = EXTENSOES_ACEITAS.map(ext => `.${ext}`).join(',');
 
@@ -70,12 +74,18 @@ export class ChatComponent implements OnDestroy {
     this.textoInput.set('');
     this.anexosPendentes.set([]);
     this.carregando.set(true);
+    this.faseBubble.set('pensando');
+    this.timeoutImplementando = setTimeout(
+      () => this.faseBubble.set('implementando'),
+      DELAY_IMPLEMENTANDO_MS,
+    );
     this.rolarParaFinal();
 
     this.subscricaoAtiva = this.agentePromptService
       .enviarMensagem({ mensagem: conteudo, historico })
       .subscribe({
         next: resposta => {
+          this.limparTimeoutImplementando();
           const mensagemAssistente: Mensagem = {
             id: crypto.randomUUID(),
             papel: 'assistente',
@@ -86,14 +96,20 @@ export class ChatComponent implements OnDestroy {
           };
           this.mensagens.update(anterior => [...anterior, mensagemAssistente]);
           this.carregando.set(false);
+          this.faseBubble.set('pensando');
           this.rolarParaFinal();
 
-          if (resposta.fase === 'finalizado') {
+          if (resposta.fase === 'implementado') {
+            this.conversaFinalizada.set(true);
+            setTimeout(() => window.location.reload(), 3000);
+          } else if (resposta.fase === 'finalizado') {
             this.conversaFinalizada.set(true);
           }
         },
         error: () => {
+          this.limparTimeoutImplementando();
           this.carregando.set(false);
+          this.faseBubble.set('pensando');
         },
       });
   }
@@ -136,11 +152,13 @@ export class ChatComponent implements OnDestroy {
   }
 
   novaConversa(): void {
+    this.limparTimeoutImplementando();
     this.mensagens.set([]);
     this.anexosPendentes.set([]);
     this.textoInput.set('');
     this.carregando.set(false);
     this.conversaFinalizada.set(false);
+    this.faseBubble.set('pensando');
     this.subscricaoAtiva?.unsubscribe();
     this.subscricaoAtiva = null;
   }
@@ -162,7 +180,15 @@ export class ChatComponent implements OnDestroy {
   }
 
   ngOnDestroy(): void {
+    this.limparTimeoutImplementando();
     this.subscricaoAtiva?.unsubscribe();
+  }
+
+  private limparTimeoutImplementando(): void {
+    if (this.timeoutImplementando !== null) {
+      clearTimeout(this.timeoutImplementando);
+      this.timeoutImplementando = null;
+    }
   }
 
   private extrairExtensao(nomeArquivo: string): TipoAnexo {

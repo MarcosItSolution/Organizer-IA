@@ -1,4 +1,4 @@
-from typing import Literal, Optional
+from typing import Literal
 
 from pydantic import BaseModel
 
@@ -14,8 +14,8 @@ class EntradaDesenvolvedorCodigo(BaseModel):
 
 
 class RespostaDesenvolvedorCodigo(BaseModel):
-    url_pull_request: Optional[str] = None
     arquivos_gerados: list[ArquivoGerado] = []
-    titulo_pr: str = ""
+    titulo: str = ""
+    descricao: str = ""
     fase: Literal["finalizado", "erro"]
     mensagem: str

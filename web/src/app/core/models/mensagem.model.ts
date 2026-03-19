@@ -2,7 +2,7 @@ export type PapelMensagem = 'usuario' | 'assistente';
 
 export type TipoAnexo = 'sql' | 'doc' | 'docx' | 'csv' | 'xls' | 'xlsx' | 'txt' | 'png' | 'jpg' | 'jpeg';
 
-export type FaseAgente = 'coletando' | 'finalizado';
+export type FaseAgente = 'coletando' | 'finalizado' | 'implementado';
 
 export interface Anexo {
   nome: string;
@@ -34,4 +34,5 @@ export interface RespostaAgente {
   fase: FaseAgente;
   markdown_final: string | null;
   prompt_engenharia: string | null;
+  arquivos_implementados: string[];
 }

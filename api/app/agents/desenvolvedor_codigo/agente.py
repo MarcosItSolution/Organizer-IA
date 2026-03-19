@@ -1,4 +1,4 @@
-from datetime import datetime
+from pathlib import Path
 from typing import Annotated, Literal, Optional
 
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage, ToolMessage
@@ -10,83 +10,95 @@ from pydantic import BaseModel, Field
 from typing_extensions import TypedDict
 
 from app.core.configuracoes import configuracoes
-from app.agents.desenvolvedor_codigo.github import ServicoGitHub
 
-PROMPT_DESENVOLVEDOR = """Você é um desenvolvedor full-stack sênior especializado em Angular 19 e FastAPI.
+_RAIZ_PROJETO = Path(__file__).parent.parent.parent.parent.parent
+
+
+def _carregar_contexto_projeto() -> str:
+    claude_md = _RAIZ_PROJETO / "CLAUDE.md"
+    if claude_md.exists():
+        return claude_md.read_text(encoding="utf-8")
+    return ""
+
+
+_CONTEXTO_PROJETO = _carregar_contexto_projeto()
+
+PROMPT_DESENVOLVEDOR = f"""Você é um desenvolvedor full-stack sênior especializado em Angular 19 e FastAPI.
 
 Você recebe um prompt de engenharia detalhado e deve gerar TODOS os arquivos de código necessários para implementar a feature descrita, seguindo rigorosamente as convenções do projeto.
 
-## Stack do Projeto
+## Convenções do Projeto
 
-### Backend (FastAPI — pasta `api/`)
-- Python + FastAPI com `async def` em todas as rotas
-- Estrutura por feature em `api/app/features/{nome_feature}/`:
-  - `__init__.py` (arquivo vazio)
-  - `roteador.py` — APIRouter com endpoints assíncronos
-  - `esquemas.py` — Schemas Pydantic separados para entrada e saída
-  - `servico.py` — Lógica de negócio com injeção via `Depends()`
-- Proibido retornar `dict` nas rotas — sempre schemas Pydantic
-- Proibido `try/except` e `print()`
-- Proibido `Any` do módulo `typing` — tipagem estrita obrigatória
+{_CONTEXTO_PROJETO}
 
-### Frontend (Angular 19 — pasta `web/`)
-- Angular 19 com standalone components e Signals
-- Angular Material para UI
-- Features em `web/src/app/features/{nome-feature}/`
-- Services em `web/src/app/core/services/`
-- Models em `web/src/app/core/models/`
-- Proibido `console.log`, `any` e `var`
+## Estrutura de Pastas do Projeto
 
-## Convenções obrigatórias
-- Português em variáveis, métodos, propriedades, interfaces, types, enums e nomes de arquivos
-- Inglês apenas em nomes de pastas
-- Sem comentários no código
-- Foco em clareza e manutenibilidade
+### Backend (api/)
+- Features: `api/app/features/{{nome_feature}}/`
+  - `__init__.py`, `roteador.py`, `esquemas.py`, `servico.py`
+- Agentes: `api/app/agents/{{nome_agente}}/`
+  - `__init__.py`, `agente.py`, `esquemas.py`, `servico.py`, `roteador.py`
+
+### Frontend (web/)
+- Estilos globais e variáveis de tema: `web/src/styles.scss` ← use este arquivo para mudanças de tema, cores globais e variáveis CSS
+- Features: `web/src/app/features/{{nome-feature}}/`
+- Services: `web/src/app/core/services/`
+- Models: `web/src/app/core/models/`
+
+### Variáveis CSS globais (definidas em web/src/styles.scss)
+Todos os componentes usam estas variáveis — ao alterar o tema, modifique-as aqui:
+- `--cor-fundo`: cor de fundo da página
+- `--cor-superficie`: cor de superfície dos cards/containers
+- `--cor-superficie-elevada`: superfície com elevação (hover, dropdowns)
+- `--cor-borda`: cor das bordas padrão
+- `--cor-borda-hover`: cor das bordas ao hover
+- `--cor-primaria`: cor primária (#6366f1)
+- `--cor-primaria-clara`: variante clara da primária (#818cf8)
+- `--cor-secundaria`: cor secundária (#06b6d4)
+- `--gradiente-primario`: gradiente principal (linear-gradient(135deg, #6366f1, #8b5cf6))
+- `--cor-texto`: cor do texto principal
+- `--cor-texto-suave`: texto secundário/suave
+- `--cor-texto-sutil`: texto sutil/desabilitado
 
 ## Sua tarefa
 1. Leia o prompt de engenharia com atenção
-2. Identifique se é necessário código backend, frontend ou ambos
+2. Identifique quais arquivos precisam ser criados (backend, frontend ou ambos)
 3. Gere TODOS os arquivos com conteúdo COMPLETO e funcional
-4. Chame `submeter_codigo_para_pull_request` com todos os arquivos, título e descrição do PR
+4. Chame `escrever_arquivos_projeto` com todos os arquivos gerados
 
-O nome do branch deve seguir o padrão `feat/{nome-da-feature-em-kebab-case}`.
-O título e a descrição do PR devem ser escritos em português."""
+Os caminhos dos arquivos devem ser relativos à raiz do projeto."""
 
 
 class DadosArquivo(BaseModel):
     caminho: str = Field(
-        description="Caminho relativo do arquivo no repositório (ex: api/app/features/auth/roteador.py)"
+        description="Caminho relativo do arquivo na raiz do projeto (ex: api/app/features/auth/roteador.py)"
     )
     conteudo: str = Field(description="Conteúdo completo e funcional do arquivo")
     descricao: str = Field(description="Descrição em uma linha do que este arquivo implementa")
 
 
-class CodigoParaPR(BaseModel):
-    arquivos: list[DadosArquivo] = Field(description="Lista de todos os arquivos a serem criados no PR")
-    titulo_pr: str = Field(description="Título claro do Pull Request em português")
-    descricao_pr: str = Field(description="Descrição markdown do PR listando todas as mudanças")
-    nome_branch_base: str = Field(description="Nome base do branch no padrão feat/{nome-feature-kebab-case}")
+class CodigoParaEscrita(BaseModel):
+    arquivos: list[DadosArquivo] = Field(description="Lista de todos os arquivos a serem criados no projeto")
+    titulo: str = Field(description="Título claro da implementação em português")
+    descricao: str = Field(description="Descrição markdown resumindo o que foi implementado")
 
 
-@tool(args_schema=CodigoParaPR)
-def submeter_codigo_para_pull_request(
+@tool(args_schema=CodigoParaEscrita)
+def escrever_arquivos_projeto(
     arquivos: list[DadosArquivo],
-    titulo_pr: str,
-    descricao_pr: str,
-    nome_branch_base: str,
+    titulo: str,
+    descricao: str,
 ) -> str:
-    """Chame quando todos os arquivos de código estiverem prontos para criar o Pull Request."""
-    return "CODIGO_PRONTO_PARA_PR"
+    """Chame quando todos os arquivos de código estiverem prontos para escrever no projeto."""
+    return "CODIGO_PRONTO_PARA_ESCRITA"
 
 
 class EstadoAgente(TypedDict):
     mensagens: Annotated[list[BaseMessage], add_messages]
     prompt_engenharia: str
     arquivos_gerados: Optional[list[dict]]
-    titulo_pr: Optional[str]
-    descricao_pr: Optional[str]
-    nome_branch: Optional[str]
-    url_pull_request: Optional[str]
+    titulo: Optional[str]
+    descricao: Optional[str]
 
 
 def _criar_llm_desenvolvedor() -> ChatGroq:
@@ -94,7 +106,7 @@ def _criar_llm_desenvolvedor() -> ChatGroq:
         model="llama-3.3-70b-versatile",
         api_key=configuracoes.groq_api_key,
         temperature=0.1,
-    ).bind_tools([submeter_codigo_para_pull_request])  # type: ignore[return-value]
+    ).bind_tools([escrever_arquivos_projeto])  # type: ignore[return-value]
 
 
 async def no_gerador_codigo(estado: EstadoAgente) -> dict:
@@ -102,53 +114,45 @@ async def no_gerador_codigo(estado: EstadoAgente) -> dict:
     mensagens = [
         SystemMessage(content=PROMPT_DESENVOLVEDOR),
         HumanMessage(
-            content=f"Prompt de engenharia:\n\n{estado['prompt_engenharia']}\n\nGere o código completo e chame `submeter_codigo_para_pull_request`."
+            content=f"Prompt de engenharia:\n\n{estado['prompt_engenharia']}\n\nGere o código completo e chame `escrever_arquivos_projeto`."
         ),
     ]
     resposta = await llm.ainvoke(mensagens)
     return {"mensagens": [resposta]}
 
 
-def roteador_desenvolvedor(estado: EstadoAgente) -> Literal["no_criar_pr", "__end__"]:
+def roteador_desenvolvedor(estado: EstadoAgente) -> Literal["no_escrever_arquivos", "__end__"]:
     ultima_mensagem = estado["mensagens"][-1]
     if isinstance(ultima_mensagem, AIMessage) and ultima_mensagem.tool_calls:
-        return "no_criar_pr"
+        return "no_escrever_arquivos"
     return END
 
 
-async def no_criar_pr(estado: EstadoAgente) -> dict:
+async def no_escrever_arquivos(estado: EstadoAgente) -> dict:
     ultima_mensagem = estado["mensagens"][-1]
     tool_call = ultima_mensagem.tool_calls[0]  # type: ignore[union-attr]
     dados: dict = tool_call["args"]
 
     tool_message = ToolMessage(
-        content="Código recebido. Criando Pull Request no GitHub...",
+        content="Código recebido. Escrevendo arquivos no projeto...",
         tool_call_id=tool_call["id"],
     )
 
-    timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
-    nome_branch = f"{dados['nome_branch_base']}-{timestamp}"
-
-    servico_github = ServicoGitHub()
     arquivos: list[dict] = dados["arquivos"]
-    url_pr = servico_github.criar_pull_request(
-        nome_branch=nome_branch,
-        titulo=dados["titulo_pr"],
-        descricao=dados["descricao_pr"],
-        arquivos=arquivos,
-    )
+    for arquivo in arquivos:
+        caminho_completo = _RAIZ_PROJETO / arquivo["caminho"]
+        caminho_completo.parent.mkdir(parents=True, exist_ok=True)
+        caminho_completo.write_text(arquivo["conteudo"], encoding="utf-8")
 
     mensagem_conclusao = AIMessage(
-        content=f"Pull Request criado com sucesso! Acesse em: {url_pr}"
+        content=f"Implementação concluída! {len(arquivos)} arquivo(s) escrito(s) no projeto."
     )
 
     return {
         "mensagens": [tool_message, mensagem_conclusao],
         "arquivos_gerados": arquivos,
-        "titulo_pr": dados["titulo_pr"],
-        "descricao_pr": dados["descricao_pr"],
-        "nome_branch": nome_branch,
-        "url_pull_request": url_pr,
+        "titulo": dados["titulo"],
+        "descricao": dados["descricao"],
     }
 
 
@@ -156,11 +160,11 @@ def construir_grafo() -> StateGraph:
     grafo = StateGraph(EstadoAgente)
 
     grafo.add_node("no_gerador_codigo", no_gerador_codigo)
-    grafo.add_node("no_criar_pr", no_criar_pr)
+    grafo.add_node("no_escrever_arquivos", no_escrever_arquivos)
 
     grafo.add_edge(START, "no_gerador_codigo")
     grafo.add_conditional_edges("no_gerador_codigo", roteador_desenvolvedor)
-    grafo.add_edge("no_criar_pr", END)
+    grafo.add_edge("no_escrever_arquivos", END)
 
     return grafo.compile()
 
